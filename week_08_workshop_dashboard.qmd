@@ -1,0 +1,254 @@
+---
+title: "Global HIV Trends Dashboard"
+subtitle: "Comparing HIV incidence and prevalence trends over time in Nigeria, the United States, and India."
+format: 
+    dashboard:
+        orientation: rows
+jupyter: python3
+execute: 
+    echo: false
+dashboard: 
+    expand: false
+theme: cosmo
+---
+
+
+```{python}
+import pandas as pd
+import country_converter as coco
+import plotly.express as px
+import itables
+
+
+# -----------------------------
+# 1. Load data
+# -----------------------------
+total_hiv_raw = pd.read_csv("data/hiv_prevalence.csv")
+new_hiv_raw = pd.read_csv("data/hiv_incidence.csv")
+population = pd.read_csv("data/population_estimates_world_bank.csv")
+
+# -----------------------------
+# 2. Pivot HIV datasets to long format
+# -----------------------------
+new_hiv_long = new_hiv_raw.melt(
+    id_vars=["country", "country_code"],
+    var_name="year",
+    value_name="new_cases"
+)
+
+total_hiv_long = total_hiv_raw.melt(
+    id_vars=["country", "country_code"],
+    var_name="year",
+    value_name="total_cases"
+)
+
+# Make sure year is numeric
+new_hiv_long["year"] = new_hiv_long["year"].astype(int)
+total_hiv_long["year"] = total_hiv_long["year"].astype(int)
+
+# -----------------------------
+# 3. Join HIV datasets
+# -----------------------------
+hiv_data_combined = pd.merge(
+    new_hiv_long,
+    total_hiv_long,
+    on=["country", "country_code", "year"],
+    how="outer"
+)
+
+# -----------------------------
+# 4. Prepare population data
+# -----------------------------
+population_long = (
+    population
+    .query("indicator == 'SP.POP.TOTL'")
+    .melt(
+        id_vars=["country", "indicator"],
+        var_name="year",
+        value_name="population"
+    )
+    .rename(columns={"country": "country_code"})
+    .drop(columns=["indicator"])
+)
+
+population_long["year"] = population_long["year"].astype(int)
+
+# -----------------------------
+# 5. Join population with HIV data
+# -----------------------------
+hiv_data_combined_pop = pd.merge(
+    hiv_data_combined,
+    population_long,
+    on=["country_code", "year"],
+    how="left"
+)
+
+# -----------------------------
+# 6. Calculate incidence and prevalence rates
+# -----------------------------
+hiv_data_combined_pop["incidence_rate"] = (
+    hiv_data_combined_pop["new_cases"] / hiv_data_combined_pop["population"]
+) * 100000
+
+hiv_data_combined_pop["prevalence_rate"] = (
+    hiv_data_combined_pop["total_cases"] / hiv_data_combined_pop["population"]
+) * 100000
+
+# -----------------------------
+# 7. Select countries for line charts
+# -----------------------------
+countries = ["Nigeria", "United States", "India"]
+
+hiv_data_filtered = (
+    hiv_data_combined_pop[hiv_data_combined_pop["country"].isin(countries)]
+    .copy()
+)
+
+latest_year = hiv_data_filtered["year"].max()
+
+latest_filtered = (
+    hiv_data_filtered[hiv_data_filtered["year"] == latest_year]
+    .copy()
+)
+
+hiv_data_mini = hiv_data_filtered.sort_values("year")
+
+# -----------------------------
+# 8. Incidence rate plot
+# -----------------------------
+fig1 = px.line(
+    hiv_data_mini,
+    x="year",
+    y="incidence_rate",
+    color="country",
+    title=f"HIV Incidence Rate over Time in {countries}",
+    markers=True,
+    labels={"incidence_rate": "Incidence Rate (per 100,000)", "year": "Year"}
+)
+
+# -----------------------------
+# 9. Prevalence rate plot
+# -----------------------------
+fig2 = px.line(
+    hiv_data_mini,
+    x="year",
+    y="prevalence_rate",
+    color="country",
+    title=f"HIV Prevalence Rate over Time in {countries}",
+    markers=True,
+    labels={"prevalence_rate": "Prevalence Rate (per 100,000)", "year": "Year"}
+)
+
+# -----------------------------
+# 10. Add continent information
+# -----------------------------
+hiv_data_combined_pop["continent"] = coco.convert(
+    names=hiv_data_combined_pop["country"],
+    to="continent"
+)
+
+# -----------------------------
+# 11. Find highest prevalence rate per continent in 2011
+# -----------------------------
+hiv_2011 = hiv_data_combined_pop[hiv_data_combined_pop["year"] == 2011].copy()
+
+# Remove rows with missing continent or prevalence_rate
+hiv_2011 = hiv_2011.dropna(subset=["continent", "prevalence_rate"])
+
+highest_prev_2011 = hiv_2011.loc[
+    hiv_2011.groupby("continent")["prevalence_rate"].idxmax()
+].sort_values("prevalence_rate", ascending=False)
+
+# -----------------------------
+# 12. Bar chart for highest prevalence by continent
+# -----------------------------
+fig3 = px.bar(
+    highest_prev_2011,
+    x="continent",
+    y="prevalence_rate",
+    color="continent",
+    hover_data=["country"],
+    title="Highest HIV Prevalence Rate per Continent (2011)",
+    labels={
+        "prevalence_rate": "Prevalence Rate (per 100,000)",
+        "continent": "Continent"
+    }
+)
+
+table = highest_prev_2011[['continent','country','prevalence_rate']]\
+    .sort_values('prevalence_rate', ascending=False)\
+        .reset_index(drop=True)
+
+```
+
+# HOME
+
+## Row {height="30%"}
+
+::: {.valuebox icon="virus" color="danger" title="HIV New Cases (Selected Countries)"}
+`{python} f"{latest_filtered['new_cases'].sum():,.0f}"`
+:::
+
+::: {.valuebox icon="activity" color="primary" title="Avg Incidence Rate (Selected Countries)"}
+`{python} f"{latest_filtered['incidence_rate'].mean():.2f}"`
+:::
+
+::: {.valuebox icon="heart-pulse" color="success" title="Avg Prevalence Rate (Selected Countries)"}
+`{python} f"{latest_filtered['prevalence_rate'].mean():.2f}"`
+:::
+
+## ROW {height="70%"}
+
+```{python}
+fig1
+```
+
+## ROW {height="70%"}
+
+```{python}
+fig2
+```
+
+# INSIGHTS
+
+## Row
+
+### Highest Prevalence by Continent (2011)
+```{python}
+fig3
+```
+
+### Data for highest prevalence by continent in 2011
+
+```{python}
+table
+```
+
+# DATA SOURCE
+
+```{python}
+itables.show(
+    hiv_data_combined_pop,
+    caption="Full HIV Data with Population",
+    buttons=["csvHtml5"]
+)
+```
+
+
+# ABOUT
+
+This dashboard analyzes global HIV data to understand trends in **new infections**, **total cases**, and **prevalence rates** across selected countries ("Nigeria", "United States", "India") over time.
+
+Key insights include:
+
+**HIV new cases** for selected countries in the most recent year available.
+
+**Average incidence rate**, showing how many new HIV infections occur per 100,000 people.
+
+**Average prevalence rate**, indicating how widespread HIV is within the population.
+
+**Trends over time** in incidence and prevalence for Nigeria, the United States, and India.
+
+**Global comparison**, highlighting countries with the highest HIV prevalence rates by continent in 2011.
+
+The data combines **HIV case estimates from Gapminder** with **population data from the World Bank**, allowing infection rates to be standardized per 100,000 people.
