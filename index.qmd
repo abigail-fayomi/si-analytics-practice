@@ -1,36 +1,14 @@
 ---
-title: "Workshop Exercise: Emissions Data - Table, Map, and Chart"
-author: Fayomi Abigail Oludayo
-format: html
+title: "Emissions Dashboard"
+subtitle: "Analyzing global CO₂ emissions trends from 1990 to 2022."
+format:
+  dashboard:
+    orientation: rows
+    theme: cosmo
+execute:
+  echo: false
 ---
 
-# Introduction
-
-In this exercise, you will work with a CO2 emissions dataset downloaded from Gapminder and produce a report with three tabs: a data table, a line chart, and a choropleth map. 
-
-The goal is to roughly replicate the [Our World in Data visualization page on consumption-based CO<sub>2</sub> emissions](https://ourworldindata.org/grapher/consumption-co2-emissions?tab=table&time=2000..2022).
-
-Be sure to view that page to get an idea of the final product.
-
-# Setup
-
-- You should have forked and cloned this repository to your local machine.
-
-- Now, create and select a virtual environment in VSCode.
-
-- Install the following packages: 
-  - pandas
-  - plotly
-  - itables
-  - ipykernel
-  - jupyter
-  - country_converter
-
-- Download the data from [Gapminder](https://www.gapminder.org/data/) by selecting: *Environment > Emissions > CO2 Total emissions*, then downloading the CSV file into a `data` folder in your repository.
-
-# Data Import
-
-Run the following code to import the necessary libraries:
 
 ```{python}
 import pandas as pd
@@ -38,86 +16,28 @@ import numpy as np
 import plotly.express as px
 from itables import show
 import country_converter as coco
-```
 
-Load in your dataset from gapminder below. View it in your data viewer to get an idea of the structure.
-
-```{python}
 # Load the data
 emissions = pd.read_csv("data/co2_cons.csv")
-```
 
-```{python}
-# emissions
-```
 # Initial Cleaning
+emissions = emissions.rename(columns={"name": "country"})
+# emissions.query("country == 'China'")[["country", "2020", "2021", "2022"]]
 
-In this dataset, some values are given in thousands, with a "k" used to represent the thousands. This will cause problems when we try to make these columns numeric. So we need to clean this. We'll do this for you, but pay close attention as you might need it for your final project.
-
-First, let's see the issue:
-
-
-```{python}
-emissions= emissions.rename(columns={"name": 'country'})
-emissions.query("country == 'China'")[["country",  "2020", "2021", "2022"]]
-```
-
-Notice the letter "k" at the end of "10.6k" as an example.
-
-We can remove the "k" and multiply those values by 1000 with the following code:
-
-```{python}
 #for col in ["2021", "2022"]:
 #    has_k = emissions[col].str.contains("k")
 #    values = emissions[col].str.replace("k", "")
 #    emissions[col] = np.where(has_k, values.astype(float) * 1000, values.astype(float))
-```
 
-And check that it worked:
-
-```{python}
-emissions.query("country == 'China'")[["country",  "2020", "2021", "2022"]]
-```
+#emissions.query("country == 'China'")[["country", "2020", "2021", "2022"]]
 
 # Table Section
-
-Our goal is to create a table showing emissions for a few selected years and calculate absolute and relative changes.
-
-1. Subset the data to include `Country`, `2000`, and `2022` columns only.
-2. Calculate an "Absolute Change" column as the difference between 2022 and 2000.
-3. Calculate a "Relative Change" column as the absolute change divided by the 2000 emissions, then multiplied by 100.
-
-```{python}
-# Subset the data to include `country`, `2000`, and `2022` columns only.
-table_df = emissions[['country', '2000', '2022']] 
-
-# Calculate absolute change as the difference between 2022 and 2000
+table_df = emissions[['country', '2000', '2022']]
 table_df["Absolute Change"] = table_df['2022'] - table_df['2000']
-
-# Calculate relative change as the absolute change divided by the 2000 emissions, then multiplied by 100
 table_df["Relative Change"] = (table_df["Absolute Change"] / table_df["2000"]) * 100
-
-# Round to 0 decimal places, and add a % sign to the relative change
 table_df["Relative Change"] = table_df["Relative Change"].round(0).astype(str) + "%"
-```
-
-Now we can display this as an interactive table with itables:
-
-```{python}
-show(table_df)
-```
 
 # Chart Section
-
-Our goal is to create a line chart from 1990 to 2022 for a few selected countries.
-
-1. Melt the original `emissions` dataset so that years become rows.
-2. Filter from 1990 to 2022 only.
-3. Choose 5 countries of your choice.
-4. Create a line chart showing emissions over time for the selected countries with Plotly Express.
-
-```{python}
-# Melt the original `emissions` dataset. Your id_vars should be "country", your var_name should be "year" and your value_name should be "emissions".
 emissions_long = emissions.melt(
     id_vars=['country'],
     value_vars=[str(y) for y in range(1990, 2023)],
@@ -125,48 +45,31 @@ emissions_long = emissions.melt(
     value_name='emissions'
 )
 
-# Convert year to numeric using pd.to_numeric
 emissions_long["year"] = pd.to_numeric(emissions_long["year"])
+emissions_long["emissions"] = pd.to_numeric(
+    emissions_long["emissions"].astype(str).str.replace("−", "-")
+)
 
-# Convert emissions to numeric using pd.to_numeric. Here, we also convert dashes to the minus sign
-emissions_long["emissions"] = pd.to_numeric(emissions_long["emissions"].astype(str).str.replace("−", "-"))
-
-# Query for years between 1990 and 2022 (that is 1990, 1991, ..., 2021, 2022)
 emissions_long_1990_2022 = emissions_long[
-    (emissions_long['year']>=1990) & 
-    (emissions_long['year']<=2022)
-    ]
+    (emissions_long['year'] >= 1990) &
+    (emissions_long['year'] <= 2022)
+]
 
-# Query for 5 countries (adjust these to any countries you like)
 countries = ["China", "United States", "India", "Germany", "Brazil"]
 
-emissions_long_subset = emissions_long[emissions_long['country'].isin(countries)]
+emissions_long_subset = emissions_long[
+    emissions_long['country'].isin(countries)
+]
 
-# Create line chart. Year should be on the x-axis, emissions on the y-axis, and color should be by country.
 fig_chart = px.line(
     emissions_long_subset,
-    x= 'year',
-    y = 'emissions',
-    color= 'country',
+    x='year',
+    y='emissions',
+    color='country',
     title="CO₂ Emissions (1990–2022) for Selected Countries"
 )
 
-```
-
-
 # Mapping Section
-
-This part is done for you.
-
-**Goal:** Create a choropleth map showing global emissions from 1990 to 2022.  
-
-This will be animated by year.
-
-1. Ensure each country has a 3-letter ISO code. We'll use `country_converter` for that.
-2. Create a map with `px.choropleth` and use `animation_frame` to show changes over time.
-
-```{python}
-# Convert country names to ISO3 codes
 emissions_long_1990_2022["country_code"] = coco.convert(
     emissions_long_1990_2022["country"], to="ISO3"
 )
@@ -179,36 +82,72 @@ fig_map = px.choropleth(
     animation_frame="year",
     title="Global CO2 Emissions (1990-2022)",
 )
-
 ```
 
+# HOME
 
-# Final Tabset
+## Row {height="30%"}
 
-Below, we place our results into a tabbed interface.
+::: {.valuebox icon="globe" color="danger" title="Total CO₂ Emissions (2022)"}
+`{python} f"{emissions['2022'].sum():,.0f}"`
+:::
 
-::: {.panel-tabset}
 
-## Table
+::: {.valuebox icon="activity" color="primary" title="Avg CO₂ Emissions per Country"}
+`{python} f"{emissions['2022'].mean():,.2f}"`
+:::
+
+::: {.valuebox icon="map" color="success" title="Countries Reporting Emissions"}
+`{python} f"{emissions['country'].nunique():,.0f}"`
+:::
+
+## ROW {height="70%"}
+
+
 
 ```{python}
 show(table_df)
 ```
 
-## Chart
+# CHART
+**CO₂ Emissions Trends (1990–2022)**
+Line chart showing the trend of CO₂ emissions over time for China, India, Germany and Brazil.
+
+## ROW {height="70%"}
+
 
 ```{python}
-fig_chart.show()
+fig_chart
 ```
 
-## Map
+
+# MAP
+
+## Row
 
 ```{python}
-fig_map.show()
+fig_map
 ```
 
-:::
 
-# Deploying to GitHub Pages
+# ABOUT
 
-As a final step, you should follow the steps outlined in the prework to deplioy your report to GitHub Pages. You will be asked to share a link to your report in the course portal
+This dashboard explores global consumption-based CO₂ emissions using data from Gapminder. It provides an overview of how emissions have changed over time across different countries.
+
+The dashboard includes:
+
+A **data table** comparing emissions between 2000 and 2022, including absolute and relative changes.
+
+A **trend chart** showing how emissions evolved from 1990 to 2022 for selected countries.
+
+An **interactive world map** displaying global emissions by country over time.
+
+These visualizations help highlight regional patterns, major contributors to global emissions, and long-term trends in carbon output.
+
+
+## DATA SOURCE
+
+Data: Gapminder – CO₂ Total Emissions Dataset  
+Source: [Gapminder Data Portal](https://www.gapminder.org/data/)
+
+The dataset contains country-level consumption-based CO₂ emissions covering multiple decades. It includes emissions in metric tons for each country and year, allowing for analysis of trends and comparisons across nations.
