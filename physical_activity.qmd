@@ -1,0 +1,278 @@
+---
+title: "PHYSICAL ACTIVITY AND SEDENTARY BEHAVIOR ANALYSIS"
+format:
+  dashboard:
+    theme: cosmo
+execute:
+  echo: false
+  warning: false
+---
+
+
+```{python}
+import pandas as pd
+import plotly.express as px
+
+# 1. Load data
+df = pd.read_csv("data/physical_activity.csv")
+
+# 2. Clean data
+df = df.dropna(subset=[
+    "bmi",
+    "sedentary_ap_s_day",
+    "light_ap_s_day",
+    "mvpa_s_day",
+    "oms_recommendation",
+    "sex",
+    "status"
+]).copy()
+
+# Standardize labels
+df["status"] = df["status"].replace({
+    "Adulte": "Adult",
+    "Enfant": "Child"
+})
+
+df["sex"] = df["sex"].replace({
+    "M": "Male",
+    "F": "Female"
+})
+
+# Clean and convert columns to numeric
+cols_to_convert = ["bmi", "mvpa_s_day", "sedentary_ap_s_day", "light_ap_s_day"]
+
+for col in cols_to_convert:
+    df[col] = (
+        df[col]
+        .astype(str)
+        .str.strip()
+        .str.replace(",", "", regex=False)
+    )
+    df[col] = pd.to_numeric(df[col], errors="coerce")
+
+# Convert seconds/day to minutes/day
+df["mvpa_min_day"] = df["mvpa_s_day"] / 60
+df["sedentary_min_day"] = df["sedentary_ap_s_day"] / 60
+df["light_min_day"] = df["light_ap_s_day"] / 60
+
+# 3. Summary tables
+
+# Chart 1: Average MVPA by age group and sex
+mvpa_summary = (
+    df.groupby(["status", "sex"], as_index=False)["mvpa_min_day"]
+    .mean()
+)
+
+# Chart 2: Proportion meeting WHO recommendation by age group
+who_summary = (
+    df.groupby(["status", "oms_recommendation"], as_index=False)
+    .size()
+    .rename(columns={"size": "count"})
+)
+
+who_summary["proportion"] = (
+    who_summary.groupby("status")["count"]
+    .transform(lambda x: x / x.sum())
+)
+
+# Chart 3: Sedentary vs Light activity by age group
+activity_summary = (
+    df.groupby("status", as_index=False)[["sedentary_min_day", "light_min_day"]]
+    .mean()
+)
+
+activity_long = activity_summary.melt(
+    id_vars="status",
+    value_vars=["sedentary_min_day", "light_min_day"],
+    var_name="activity_type",
+    value_name="minutes_per_day"
+)
+
+activity_long["activity_type"] = activity_long["activity_type"].replace({
+    "sedentary_min_day": "Sedentary",
+    "light_min_day": "Light"
+})
+
+
+# 4. CHART 1 - Bar Chart (Average MVPA by Age Group and Sex)
+
+fig1 = px.bar(
+    mvpa_summary,
+    x="status",
+    y="mvpa_min_day",
+    color="sex",
+    barmode="group",
+    text_auto=".1f",
+    title="Average MVPA (minutes/day) by Age Group and Sex",
+    labels={
+        "status": "Age Group",
+        "mvpa_min_day": "MVPA Minutes/Day",
+        "sex": "Sex"
+    }
+)
+
+#fig1.update_layout(template="plotly_white")
+#fig1.show()
+
+
+# 5. CHART 2 - Stacked Bar Chart (Proportion Meeting WHO Recommendations by Age Group)
+
+fig2 = px.bar(
+    who_summary,
+    x="status",
+    y="proportion",
+    color="oms_recommendation",
+    barmode="stack",
+    text_auto=".0%",
+    title="Proportion Meeting WHO Recommendations by Age Group",
+    labels={
+        "status": "Age Group",
+        "proportion": "Proportion",
+        "oms_recommendation": "WHO Recommendation"
+    }
+).update_yaxes(tickformat=".0%")
+
+#fig2.update_layout(template="plotly_white")
+#fig2.show()
+
+
+# 6. CHART 3 - Column Chart (Sedentary vs Light Activity)
+
+fig3 = px.bar(
+    activity_long,
+    x="status",
+    y="minutes_per_day",
+    color="activity_type",
+    barmode="group",
+    text_auto=".1f",
+    title="Sedentary vs Light Activity (minutes/day) by Age Group",
+    labels={
+        "status": "Age Group",
+        "minutes_per_day": "Minutes/Day",
+        "activity_type": "Activity Type"
+    }
+)
+
+#fig3.update_layout(template="plotly_white")
+#fig3.show()
+
+# 7. CHART 4 - Scatter Plot (BMI vs MVPA)
+
+fig4 = px.scatter(
+    df,
+    x="bmi",
+    y="mvpa_min_day",
+    color="oms_recommendation",
+    symbol="status",
+    hover_data=["personal_id", "sex", "status"],
+    title="BMI vs MVPA",
+    labels={
+        "bmi": "BMI",
+        "mvpa_min_day": "MVPA Minutes/Day",
+        "oms_recommendation": "WHO Recommendation"
+    }
+)
+
+#fig4.update_layout(template="plotly_white")
+#fig4.show()
+
+
+# 8. CHART 5 - Box Plot (Distribution of MVPA across sexes)
+
+fig5 = px.box(
+    df,
+    x="sex",
+    y="mvpa_min_day",
+    color="sex",
+    points="outliers",
+    title="Distribution of MVPA Across Sexes",
+    labels={
+        "sex": "Sex",
+        "mvpa_min_day": "MVPA Minutes/Day"
+    }
+).update_layout(template="plotly_white", showlegend=False)
+#fig5.show()
+```
+
+# OVERVIEW
+
+## Row {height="20%"}
+
+::: {.valuebox icon="person" color="primary" title="Average BMI (Adults)"}
+`{python} f"{df[df['status'] == 'Adult']['bmi'].mean():.1f}"`
+:::
+
+
+::: {.valuebox icon="people" color="success" title="Average BMI (Children)"}
+`{python} f"{df[df['status'] == 'Child']['bmi'].mean():.1f}"`
+:::
+
+::: {.valuebox icon="clock" color="warning" title="Average Sedentary Time (hrs/day)"}
+`{python} f"{df['sedentary_min_day'].mean() / 60:.1f}"`
+:::
+
+::: {.valuebox icon="activity" color="info" title="% Meeting WHO Recommendations"}
+`{python} f"{(df['oms_recommendation'] == 'Yes').mean() * 100:.1f}%"`
+:::
+
+
+## Row {height="80%"}
+
+### Column {width="50%"}
+
+```{python}
+fig1
+```
+
+### Column{width="50%"}
+
+```{python}
+fig2
+```
+
+
+# BEHAVIOURAL PATTERNS
+
+## Row {height="50%"}
+
+### Column {width="60%"}
+
+```{python}
+fig3
+```
+
+Blue = Sedentary Time, Orange = Light Activity
+
+### Column {width="40%"}
+
+```{python}
+fig5
+```
+
+# HEALTH RELATIONSHIP(BMI)
+
+This chart shows the relationship between activity and BMI.
+
+```{python}
+fig4
+```
+
+
+# ABOUT
+
+This dashboard explores daily physical activity and sedentary behavior among adults and children. 
+
+It examines how different activity levels—sedentary time, light activity, and moderate to vigorous physical activity (MVPA) vary across age groups and sexes. 
+
+The analysis also investigates how these behaviors relate to Body Mass Index (BMI) and whether individuals meet the World Health Organization (WHO) physical activity recommendations. 
+
+The goal is to highlight patterns in lifestyle behaviors and provide insights into factors associated with healthier activity levels.
+
+
+## DATA SOURCE
+
+The data used in this dashboard comes from the Physical Activity dataset available in the SI Analytics GitHub Repository. The dataset contains observational data on daily activity patterns for participants across different households, including measures of sedentary time, light physical activity, moderate-to-vigorous activity, BMI, and adherence to WHO physical activity guidelines.
+
+Source: SI Analytics GitHub Repository
+
+Dataset: physical_activity.csv
