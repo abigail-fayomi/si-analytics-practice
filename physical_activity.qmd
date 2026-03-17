@@ -103,7 +103,7 @@ fig1 = px.bar(
     color="sex",
     barmode="group",
     text_auto=".1f",
-    title="Average MVPA (minutes/day) by Age Group and Sex",
+    title="Average Moderate to Vigorous Physical Activity MVPA (minutes/day) by Age Group and Sex",
     labels={
         "status": "Age Group",
         "mvpa_min_day": "MVPA Minutes/Day",
@@ -185,7 +185,7 @@ fig5 = px.box(
     y="mvpa_min_day",
     color="sex",
     points="outliers",
-    title="Distribution of MVPA Across Sexes",
+    title="Distribution of Moderate to Vigorous Physical Activity (MVPA) Across Sexes",
     labels={
         "sex": "Sex",
         "mvpa_min_day": "MVPA Minutes/Day"
@@ -198,13 +198,17 @@ fig5 = px.box(
 
 ## Row {height="20%"}
 
-::: {.valuebox icon="person" color="primary" title="Average BMI (Adults)"}
-`{python} f"{df[df['status'] == 'Adult']['bmi'].mean():.1f}"`
+::: {.valuebox icon="person" color="primary" title="Adults Overview"}
+`{python} f"Avg BMI: {df[df['status'] == 'Adult']['bmi'].mean():.1f}"`
+  
+`{python} f"Count: {(df['status'] == 'Adult').sum()}"`
 :::
 
 
-::: {.valuebox icon="people" color="success" title="Average BMI (Children)"}
-`{python} f"{df[df['status'] == 'Child']['bmi'].mean():.1f}"`
+::: {.valuebox icon="people" color="success" title="Children Overview"}
+`{python} f"Avg BMI: {df[df['status'] == 'Child']['bmi'].mean():.1f}"`
+  
+`{python} f"Count: {(df['status'] == 'Child').sum()}"`
 :::
 
 ::: {.valuebox icon="clock" color="warning" title="Average Sedentary Time (hrs/day)"}
