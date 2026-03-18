@@ -12,6 +12,7 @@ execute:
 ```{python}
 import pandas as pd
 import plotly.express as px
+import itables
 
 # 1. Load data
 df = pd.read_csv("data/physical_activity.csv")
@@ -280,3 +281,11 @@ The data used in this dashboard comes from the Physical Activity dataset availab
 Source: SI Analytics GitHub Repository
 
 Dataset: physical_activity.csv
+
+```{python}
+itables.show(
+    df,
+    caption="Full Physical Activity Dataset",
+    buttons=["csvHtml5"]
+)
+```
