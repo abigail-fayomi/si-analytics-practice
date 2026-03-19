@@ -44,23 +44,16 @@ for col in columns_to_numeric:
     df[col] = pd.to_numeric(df[col], errors="coerce")
 
 # Remove incomplete rows
-
 df = df.dropna(subset=["State", "Year", "Totals.Revenue", "Totals.Expenditure"])
 df["State"] = df["State"].str.upper()
 
 # Create calculated columns
-
 df["Budget Balance"] = df["Totals.Revenue"] - df["Totals.Expenditure"]
-
 df["Debt Ratio"] = df["Totals.Debt at end of fiscal year"].div(df["Totals.Revenue"]).mul(100)
-
 df["Education Share"] = df["Details.Education.Education Total"].div(df["Totals.Expenditure"]).mul(100)
-
 df["Budget Status"] = df["Budget Balance"].apply(lambda x: "Surplus" if x >= 0 else "Deficit")
 
-
 # Filters
-
 selected_year = 2019
 selected_state = "CALIFORNIA"
 
@@ -69,6 +62,9 @@ df_year = df[df["Year"] == selected_year].copy()
 state_data = df[df["State"] == selected_state].copy().sort_values("Year")
 state_year_data = df_year[df_year["State"] == selected_state].copy()
 
+# Top 10 states by expenditure
+top10_expenditure = df_year.sort_values("Totals.Expenditure", ascending=False).head(10)
+top_state_year_data = df_year[df_year["State"].isin(top10_expenditure["State"])].copy()
 
 # KPI values
 avg_revenue = df_year["Totals.Revenue"].mean()
@@ -78,9 +74,8 @@ state_budget_balance = state_year_data["Budget Balance"].iloc[0] if not state_ye
 
 balance_color = "success" if state_budget_balance is not None and state_budget_balance >= 0 else "danger"
 
-# Figure 1: Top 10 states by expenditure
-top10_expenditure = df_year.sort_values("Totals.Expenditure", ascending=False).head(10)
 
+# Figure 1: Top 10 states by expenditure
 fig_top_expenditure = px.bar(
     top10_expenditure,
     x="Totals.Expenditure",
@@ -90,7 +85,6 @@ fig_top_expenditure = px.bar(
     labels={"Totals.Expenditure": "Total Expenditure ($)", "State": "State"},
     title=f"Top 10 States by Total Expenditure ({selected_year})"
 ).update_yaxes(categoryorder='total ascending')
-
 
 # Figure 2: Revenue vs debt
 df_debt = df_year.dropna(subset=["Totals.Debt at end of fiscal year"])
@@ -108,8 +102,18 @@ fig_revenue_vs_debt = px.scatter(
     title=f"Revenue vs Debt ({selected_year})"
 )
 
+# Figure 3: Revenue vs expenditure trend for op 10 states
+fig_revenue_vs_expenditure = px.bar(
+    top_state_year_data,
+    x="State",
+    y=["Totals.Revenue", "Totals.Expenditure"],
+    barmode="group",
+    color_discrete_sequence=px.colors.qualitative.Bold,
+    labels={"value": "Amount ($)", "variable": "Metric"},
+    title=f"Revenue vs Expenditure for Top 10 States ({selected_year})"
+).update_layout(xaxis={'categoryorder':'total descending'})
 
-# Figure 3: Revenue vs expenditure trend for selected state
+# Figure 4: Revenue vs expenditure trend for selected state
 fig_trend_state = px.line(
     state_data,
     x="Year",
@@ -119,7 +123,7 @@ fig_trend_state = px.line(
 )
    
 
-# Figure 4: Spending breakdown for selected state
+# Figure 5: Spending breakdown for selected state
 selected_row = state_year_data.iloc[0]
 
 sector_df = pd.DataFrame({
@@ -142,32 +146,10 @@ fig_spending_breakdown = px.bar(
 ).update_layout(coloraxis_showscale=False)
 
 
-# Figure 5: Highlight selected state
-df_year["Highlight"] = df_year["State"].apply(
-    lambda x: selected_state if x == selected_state else "Other States"
-)
-
-fig_state_highlight = px.scatter(
-    df_year,
-    x="Totals.Revenue",
-    y="Totals.Expenditure",
-    hover_name="State",
-    color="Highlight",
-    color_discrete_sequence=px.colors.qualitative.Bold,
-    labels={
-        "Totals.Revenue": "Total Revenue ($)",
-        "Totals.Expenditure": "Total Expenditure ($)",
-        "Highlight": "State"
-    },
-    title=f"Revenue vs Expenditure with {selected_state} Highlighted ({selected_year})"
-)
-
-
 # Insight values
 max_education_state = df_year.loc[df_year["Details.Education.Education Total"].dropna().idxmax(), "State"]
 
 max_health_state = df_year.loc[df_year["Details.Health.Health Total Expenditure"].dropna().idxmax(), "State"]
-
 
 max_debt_state = df_year.loc[df_year["Debt Ratio"].dropna().idxmax(), "State"]
    
@@ -175,16 +157,16 @@ max_debt_state = df_year.loc[df_year["Debt Ratio"].dropna().idxmax(), "State"]
 
 
 # OVERVIEW
-The key indicators summarize the average financial performance across states and highlight the selected state’s budget position.
+The key indicators summarize the average financial performance across states and highlight the selected state’s budget position for the 2019.
 
 ## Row {height="20%"}
 
 ::: {.valuebox icon="cash" color="info" title="Average Revenue"}
-`{python} f"${avg_revenue:,.0f}"`
+`{python} f"${avg_revenue/1_000_000:.1f}M"`
 :::
 
 ::: {.valuebox icon="credit-card" color="primary" title="Average Expenditure"}
-`{python} f"${avg_expenditure:,.0f}"`
+`{python} f"${avg_expenditure/1_000_000:.1f}M"`
 :::
 
 ::: {.valuebox icon="percent" color="teal" title="Average Debt Ratio"}
@@ -192,12 +174,13 @@ The key indicators summarize the average financial performance across states and
 :::
 
 ::: {.valuebox icon="bank" color="`{python} balance_color`" title="Budget Balance (California)"}
-`{python} f"${state_budget_balance:,.0f}" if state_budget_balance is not None else "No data"`
+`{python} f"${state_budget_balance/1_000_000:.1f}M" if state_budget_balance is not None else "No data"`
 :::
 
 ## Row {height="80%"}
 
 ### Column {width="50%"}
+
 
 ```{python}
 fig_top_expenditure
@@ -213,13 +196,27 @@ fig_revenue_vs_debt
 ```
 
 This chart illustrates the relationship between state revenue and total debt.
-States with higher revenue often carry higher debt levels, reflecting larger economies and greater capacity to borrow.
-However, states with relatively high debt compared to their revenue may face greater financial risk.
+
+In **`{python} selected_year`**, the state with the highest debt ratio was **`{python} max_debt_state`**.
 
 
 # STATE TRENDS
 
 ## Row
+
+### Column {width="50%"}
+
+```{python}
+fig_revenue_vs_expenditure
+```
+
+This chart compares revenue and expenditure across the top 10 states in 2019, sorted by revenue in descending order.
+
+California clearly leads both revenue and expenditure, reflecting its large economic scale. Other major states such as New York and Texas also show high financial activity, though at a lower level.
+
+For most states, revenue and expenditure are closely aligned, indicating relatively balanced budgets. However, small gaps between the two suggest that some states operate with slight surpluses or deficits.
+
+Overall, the chart highlights how larger states dominate government finances while smaller states operate at significantly lower spending and revenue levels.
 
 ### Column {width="50%"}
 
@@ -230,35 +227,25 @@ fig_trend_state
 This chart shows how revenue and expenditure changed over time for **`{python} selected_state`**. 
 
 
-### Column {width="50%"}
-
-```{python}
-fig_state_highlight
-```
-
-Insight
-
-This chart shows how revenue and expenditure changed over time for **`{python} selected_year`**.
-
-This chart compares **`{python} selected_state`** with other states in **`{python} selected_year`**. Its position indicates whether it operates at a larger or smaller financial scale relative to others.
-
-The relationship between revenue and expenditure also provides insight into whether the state maintains a balanced budget or shows signs of deficit spending.
-
-
 # SELECTED STATE SPENDING
 
-## {height="85%"}
+## Summary
+
+### Column {width="50%"}
 
 ```{python}
 fig_spending_breakdown
 ```
 
-## {height="15%"}
-
 This chart shows how the selected state allocates its spending across key sectors such as Education, Health, Transportation, and Welfare.
-The distribution highlights the state’s policy priorities and areas of investment.
 
+In **`{python} selected_year`**, the state with the highest education spending was **`{python} max_education_state`**, while the state with the highest health spending was **`{python} max_health_state`**.
 
+### Column {width="50%"}
+
+- In **`{python} selected_year`**, the state with the highest education spending was **`{python} max_education_state`**.
+- The state with the highest health spending was **`{python} max_health_state`**.
+- The state with the highest debt ratio was **`{python} max_debt_state`**.
 
 # ABOUT
 
