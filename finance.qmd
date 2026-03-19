@@ -15,6 +15,7 @@ execute:
 import pandas as pd
 import plotly.express as px
 from itables import show
+import us
 
 # Load data
 df = pd.read_csv("data/finance.csv")
@@ -61,6 +62,8 @@ selected_state = "CALIFORNIA"
 df_year = df[df["Year"] == selected_year].copy()
 state_data = df[df["State"] == selected_state].copy().sort_values("Year")
 state_year_data = df_year[df_year["State"] == selected_state].copy()
+
+df_year["State Code"] = df_year["State"].apply(lambda x: us.states.lookup(x).abbr)
 
 # Top 10 states by expenditure
 top10_expenditure = df_year.sort_values("Totals.Expenditure", ascending=False).head(10)
@@ -145,6 +148,18 @@ fig_spending_breakdown = px.bar(
         title=f"Spending Breakdown in {selected_state} ({selected_year})"
 ).update_layout(coloraxis_showscale=False)
 
+# Figure 6: Revenue distribution map
+fig_map_revenue = px.choropleth(
+    df_year.assign(StateCode=df_year["State"].apply(lambda x: us.states.lookup(x).abbr)),
+    locations="StateCode",
+    locationmode="USA-states",
+    color="Totals.Revenue",
+    scope="usa",
+    color_continuous_scale="Purples",
+    title=f"State Revenue Distribution ({selected_year})"
+).update_layout(
+    geo=dict(bgcolor='rgba(0,0,0,0)')
+)
 
 # Insight values
 max_education_state = df_year.loc[df_year["Details.Education.Education Total"].dropna().idxmax(), "State"]
@@ -242,6 +257,10 @@ This chart shows how the selected state allocates its spending across key sector
 In **`{python} selected_year`**, the state with the highest education spending was **`{python} max_education_state`**, while the state with the highest health spending was **`{python} max_health_state`**.
 
 ### Column {width="50%"}
+
+```{python}
+fig_map_revenue
+```
 
 - In **`{python} selected_year`**, the state with the highest education spending was **`{python} max_education_state`**.
 - The state with the highest health spending was **`{python} max_health_state`**.
