@@ -1,0 +1,246 @@
+---
+title: "Pediatric HIV Survey — Yaoundé, Cameroon (2021)"
+author: "Fayomi Abigail Oludayo"
+format: 
+  dashboard:
+    orientation: rows
+    theme: cosmo
+execute:
+  echo: false
+warning: false
+---
+
+```{python}
+import pandas as pd
+import plotly.express as px
+import itables
+
+df = pd.read_csv("data/yaounde_ped_hiv_survey.csv")
+
+# 2. Simple cleaning
+df["disease_past_month"] = df["disease_past_month"].str.strip().str.title()
+df["feeding_mode"] = df["feeding_mode"].str.strip().str.title()
+df["vitamin_a_received"] = df["vitamin_a_received"].str.strip().str.title()
+df["water_container_washing_freq"] = df["water_container_washing_freq"].str.strip().str.title()
+df["health_area_name"] = df["health_area_name"].str.strip().str.title()
+df["arv_treatment"] = df["arv_treatment"].str.strip().str.upper()
+
+df["sex"] = df["sex"].str.strip().str.lower().replace({
+    "m": "Male",
+    "f": "Female"
+})
+
+
+# 3. Overview values
+total_children = len(df)
+
+vit_a_yes = (df["vitamin_a_received"] == "Yes").sum()
+vit_a_pct = (vit_a_yes / total_children) * 100
+
+most_common_disease = df["disease_past_month"].value_counts().idxmax()
+
+before_refill_count = (df["water_container_washing_freq"] == "Before Each Refill").sum()
+before_refill_pct = (before_refill_count / total_children) * 100
+
+
+# 4. Summary tables
+disease_counts = df["disease_past_month"].value_counts().head(5).reset_index()
+disease_counts.columns = ["Disease", "Count"]
+
+vit_a_counts = df["vitamin_a_received"].value_counts().reset_index()
+vit_a_counts.columns = ["Vitamin A", "Count"]
+
+feeding_counts = df["feeding_mode"].value_counts().reset_index()
+feeding_counts.columns = ["Feeding Mode", "Count"]
+
+arv_by_sex = df.groupby(["sex", "arv_treatment"]).size().reset_index(name="Count")
+
+water_counts = df["water_container_washing_freq"].value_counts().reset_index()
+water_counts.columns = ["Washing Frequency", "Count"]
+
+most_common_feeding = df["feeding_mode"].value_counts().idxmax()
+feeding_count = df["feeding_mode"].value_counts().max()
+feeding_pct = (feeding_count / total_children) * 100
+
+
+# 5. Charts
+disease_chart = px.bar(
+    disease_counts,
+    x="Disease",
+    y="Count",
+    title="Top 5 Diseases Reported",
+    text="Count",
+    color_discrete_sequence=px.colors.qualitative.Bold
+)
+
+vitamin_chart = px.pie(
+    vit_a_counts,
+    names="Vitamin A",
+    values="Count",
+    color_discrete_sequence=px.colors.qualitative.Set2,
+    title="Vitamin A Supplementation"
+)
+
+feeding_chart = px.pie(
+    feeding_counts,
+    names="Feeding Mode",
+    values="Count",
+    color_discrete_sequence=px.colors.qualitative.Set2,
+    title="Feeding Mode Distribution"
+)
+
+arv_chart = px.bar(
+    arv_by_sex,
+    x="sex",
+    y="Count",
+    color="arv_treatment",
+    barmode="stack",
+    title="ARV Treatment Distribution by Sex",
+    labels={"sex": "Sex", "arv_treatment": "ARV Treatment"}
+)
+
+water_chart = px.bar(
+    water_counts,
+    x="Count",
+    y="Washing Frequency",
+    color_discrete_sequence=["#0F766E"],
+    title="Water Container Washing Frequency",
+    text="Count"
+).update_yaxes(categoryorder='total ascending')
+
+
+# Health area distribution
+
+health_area_counts = df["health_area_name"].value_counts().reset_index()
+health_area_counts.columns = ["Health Area", "Count"]
+
+health_area_chart = px.bar(
+    health_area_counts,
+    x="Health Area",
+    y="Count",
+    title="Children Surveyed by Health Area",
+    text="Count"
+)
+```
+
+
+# OVERVIEW
+
+These indicators summarize key patterns in pediatric HIV care, highlighting illness burden, nutrition support, and hygiene practices among children aged 0–5 in Yaoundé, Cameroon.
+
+## Row {height="20%"}
+
+::: {.valuebox icon="people-fill" color="#35c5608e" title="Total Children Surveyed"}
+`{python} f"{total_children}"`
+:::
+
+::: {.valuebox icon="capsule" color="#708fe4" title="Vitamin A Coverage"}
+`{python} f"{vit_a_pct:.1f}%"`
+:::
+
+::: {.valuebox icon="activity" color="#ea337f" title="Most Reported Illness"}
+`{python} most_common_disease`
+:::
+
+::: {.valuebox icon="droplet" color="success" title="Good Hygiene Practice"}
+`{python} f"{before_refill_pct:.1f}%"`
+:::
+
+## Row {height="80%"}
+
+### Column {width="50%"}
+
+```{python}
+disease_chart
+```
+
+The chart shows the most frequently reported illnesses among surveyed children. Identifying common illnesses can help health teams strengthen prevention, early screening, and pediatric support during routine HIV care.
+
+
+### Column {width="50%"}
+
+```{python}
+health_area_chart
+```
+
+This chart illustrates the distribution of surveyed children across different health areas in Yaoundé. Understanding geographic patterns can help target interventions and resources to areas with higher needs.
+
+
+# NUTRITION AND PREVENTION
+
+Nutrition support remains an important part of pediatric HIV care. Vitamin A supplementation and safe feeding practices can support child health and reduce preventable risks.
+
+## Row
+
+### Column {width="50%"}
+```{python}
+vitamin_chart
+```
+
+### Column {width="50%"}
+
+```{python}
+feeding_chart
+```
+
+# TREATMENT AND HYGIENE PRACTICES
+
+This section highlights treatment patterns and household hygiene practices. These care behaviors matter because treatment access and safe water practices can directly affect child well-being.
+
+## Row
+
+### Column {width="50%"}
+
+```{python}
+arv_chart
+```
+
+### Column {width="50%"}
+```{python}
+water_chart
+```
+
+
+# CONCLUSION
+
+## Row {height="20%"}
+
+**SUMMARY**
+
+Pediatric HIV care is not only about treatment. It is also about nutrition, prevention, hygiene, and supporting families with the information and care they need. 
+
+By understanding these patterns, health teams can better target interventions to improve child health outcomes in Yaoundé and similar settings.
+
+
+## Row {height="80%"}
+
+**KEY INSIGHTS**
+
+**`{python} most_common_disease`** is the most frequently reported illness among children in the survey. This points to an area where early screening and timely treatment may improve child health outcomes.
+
+**`{python} f"{vit_a_pct:.1f}%"`** of children received Vitamin A supplementation. Where coverage is incomplete, routine clinic visits may offer an opportunity to strengthen preventive nutrition support.
+
+**`{python} f"{before_refill_pct:.1f}%"`** of caregivers reported washing water containers before each refill. This suggests a positive hygiene practice, though differences across responses may still point to opportunities for better prevention support.
+
+**`{python} f"{feeding_pct:.1f}%"`** of children received appropriate feeding practices. Continued caregiver guidance is important for maintaining optimal nutrition.
+
+
+# ABOUT
+
+This dashboard explores patterns in childhood illness and care practices among children aged 0–5 receiving pediatric HIV care in Yaoundé, Cameroon. It highlights key areas such as disease prevalence, nutrition support, treatment distribution, and household hygiene behaviors.
+
+The goal is to provide insights that can support better health outcomes through improved prevention, nutrition, and care practices.
+
+The data used in this dashboard comes from a pediatric HIV survey conducted between July and August 2021.
+
+Source: Pediatric HIV Care Survey — Yaoundé, Cameroon  
+Dataset: yaounde_ped_hiv_survey.csv
+
+
+```{python}
+itables.show(
+    df,
+    caption="Pediatric HIV Survey Dataset",
+    buttons=["csvHtml5"]
+)
+```
