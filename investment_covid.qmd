@@ -1,0 +1,229 @@
+---
+title: "Investment Habits during COVID-19 Lockdown"
+author: "FAYOMI ABIGAIL OLUDAYO"
+format: 
+  dashboard:
+    orientation: rows
+    theme: cosmo
+execute:
+  echo: false
+warning: false
+---
+```{python}
+import pandas as pd
+import plotly.express as px
+import itables
+
+# Load data
+df = pd.read_csv("data/finance_data.csv")
+
+# Clean column names
+df.columns = df.columns.str.strip().str.replace(" ", "_")
+
+# Clean text columns
+for col in df.select_dtypes(include=["object", "string"]).columns:
+    df[col] = df[col].str.strip().str.lower()
+
+# Make age numeric
+df["age"] = pd.to_numeric(df["age"], errors="coerce")
+
+# KPI / CARD VALUES
+total_respondents = len(df)
+
+investors_pct = round((df["Investment_Avenues"] == "yes").mean() * 100, 1)
+
+stock_market_pct = round((df["Avenue"] == "equity").mean() * 100, 1)
+
+top_avenue = df["Avenue"].mode()[0]
+
+top_objective = df["Objective"].mode()[0]
+
+
+# CHART 1: Top 5 preferred investment options by ranking
+rank_cols = [
+    "Mutual_Funds",
+    "Equity_Market",
+    "Debentures",
+    "Government_Bonds",
+    "Fixed_Deposits",
+    "PPF",
+    "Gold"
+]
+
+rank_means = df[rank_cols].mean().sort_values().reset_index()
+rank_means.columns = ["Investment_Option", "Average_Rank"]
+
+top5_rank = rank_means.head(5)
+
+fig_bar = px.bar(
+    top5_rank,
+    x="Investment_Option",
+    y="Average_Rank",
+    text="Average_Rank",
+    title="Top 5 Preferred Investment Options"
+).update_traces(texttemplate="%{text:.2f}", textposition="outside"
+).update_layout(yaxis_title="Average Rank (Lower = Better)", xaxis_title=""
+)
+
+
+# CHART 2: Gender distribution of investors only
+investors = df[df["Investment_Avenues"] == "yes"]
+
+gender_data = investors["gender"].value_counts().reset_index()
+gender_data.columns = ["gender", "Count"]
+
+fig_pie = px.pie(
+    gender_data,
+    names="gender",
+    values="Count",
+    title="Gender Distribution of Investors",
+    hole=0.4
+)
+
+# CHART 3: Investment objective by gender
+obj_gender = df.groupby(["gender", "Objective"]).size().reset_index(name="Count")
+
+fig_stacked = px.bar(
+    obj_gender,
+    x="gender",
+    y="Count",
+    color="Objective",
+    title="Investment Objective by Gender",
+    barmode="stack"
+)
+
+# CHART 4: Preferred investment duration by age group
+df["Age_Group"] = pd.cut(
+    df["age"],
+    bins=[0, 25, 35, 50, 100],
+    labels=["18-25", "26-35", "36-50", "50+"]
+)
+
+duration_age = df.groupby(["Age_Group", "Duration"]).size().reset_index(name="Count")
+
+fig_duration = px.bar(
+    duration_age,
+    x="Age_Group",
+    y="Count",
+    color="Duration",
+     color_discrete_sequence=px.colors.qualitative.Bold,
+    title="Preferred Investment Duration by Age Group",
+    barmode="group"
+)
+
+# CHART 5: Expected return percentages
+expect_data = df["Expect"].value_counts().reset_index()
+expect_data.columns = ["Expect", "Count"]
+
+fig_donut = px.pie(
+    expect_data,
+    names="Expect",
+    values="Count",
+    title="Expected Return Range",
+)
+```
+
+# OVERVIEW
+This dashboard explores the investment habits of individuals during the COVID-19 lockdown. It provides insights into the percentage of respondents who invested, their preferred investment avenues, and how these preferences vary by demographic factors.
+
+## Row {height="20%"}
+
+::: {.valuebox icon="people-fill" color="#4CAF50" title="Total Respondents"}
+`{python} f"{total_respondents}"`
+:::
+
+::: {.valuebox icon="wallet2" color="#3b82f6" title="% Who Invest"}
+`{python} f"{investors_pct:.1f}%"`
+:::
+
+::: {.valuebox icon="graph-up-arrow" color="#f59e0b" title="% in Stock Market (Equity)"}
+`{python} f"{stock_market_pct:.1f}%"`
+:::
+
+::: {.valuebox icon="piggy-bank" color="#ec4899" title="Top Investment Avenue"}
+`{python} top_avenue`
+:::
+
+::: {.valuebox icon="bullseye" color="#8b5cf6" title="Top Investment Objective"}
+`{python} top_objective`
+:::
+
+## Row {height="80%"}
+
+### Column {width="50%"}
+
+```{python}
+fig_bar.show()
+```
+
+The ranking of investment options shows that **PPF** is the most preferred investment avenue, followed by **MUTUAL FUNDS**. Lower-ranked options such as **GOVERNMENT BONDS** indicate less popularity among respondents. 
+
+Although **PPF** is ranked as the most preferred investment option based on average rankings, **MUTUAL FUNDS** emerge as the most commonly used investment avenue. 
+
+This indicates a gap between perceived preference and actual investment behavior, possibly due to factors such as accessibility, returns, or market awareness.
+
+### Column {width="50%"}
+
+```{python}
+fig_pie.show()
+```
+
+The gender distribution indicates that **Male** respondents form the majority of investors. This suggests that investment participation is slightly skewed toward one gender, which may influence overall investment patterns observed in the dataset.
+
+# INVESTMENT OBJECTIVES AND DURATION
+
+## Row {height="50%"}
+
+### Column {width="50%"}
+
+```{python}
+fig_stacked.show()
+```
+
+Investment objectives vary across genders, with **capital appreciation** being the most common goal. 
+
+While both genders share similar priorities, slight differences can be observed in preferences, indicating that financial goals may differ based on demographic factors.
+
+
+### Column {width="50%"}
+
+Investment duration preferences differ across age groups. Younger investors (18–25) tend to prefer shorter investment periods, while older groups lean toward long-term investments. This reflects increasing financial stability and long-term planning as age increases.
+
+
+```{python}
+fig_duration.show()
+```
+
+
+# EXPECTED RETURNS
+
+## Row {height="50%"}
+
+### Column {width="50%"}
+
+Most respondents expect moderate returns (20%–30%), indicating a balanced approach to risk and reward. However, a segment of investors aims for higher returns, suggesting a willingness to take on more risk. These expectations influence the selection of investment avenues.
+
+```{python}
+fig_donut.show()
+```
+
+
+
+### Column {width="50%"}
+
+This dashboard explores how demographic factors and investor motivations influence financial decisions during the COVID-19 lockdown period. The analysis shows that most respondents actively invest, with a strong preference for avenues such as mutual funds and equity.
+
+Investment behavior is shaped by a balance between risk and return, as most individuals expect moderate returns while still aiming for growth. Gender and age differences reveal variations in investment objectives and time horizons, with younger investors favoring shorter durations and older individuals focusing on long-term financial planning.
+
+Overall, the findings suggest that investment choices are driven by a combination of personal goals, risk tolerance, and demographic characteristics, highlighting the importance of understanding investor profiles when analyzing financial behavior.
+
+
+# DATA DOWNLOAD
+
+```{python}
+itables.show(
+    df,
+    caption="Financial Investment Dataset",
+    buttons=["csvHtml5"]
+)
+```
