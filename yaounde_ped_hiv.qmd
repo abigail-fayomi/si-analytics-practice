@@ -70,8 +70,8 @@ disease_chart = px.bar(
     y="Count",
     title="Top 5 Diseases Reported",
     text="Count",
-    color_discrete_sequence=px.colors.qualitative.Bold
-)
+    color_discrete_sequence=px.colors.qualitative.Bold,
+).update_traces(textposition="outside")
 
 vitamin_chart = px.pie(
     vit_a_counts,
@@ -79,7 +79,7 @@ vitamin_chart = px.pie(
     values="Count",
     color_discrete_sequence=px.colors.qualitative.Set2,
     title="Vitamin A Supplementation"
-)
+).update_traces(textinfo="percent+label")
 
 feeding_chart = px.pie(
     feeding_counts,
@@ -87,7 +87,7 @@ feeding_chart = px.pie(
     values="Count",
     color_discrete_sequence=px.colors.qualitative.Set2,
     title="Feeding Mode Distribution"
-)
+).update_traces(textinfo="percent+label")
 
 arv_chart = px.bar(
     arv_by_sex,
@@ -96,8 +96,8 @@ arv_chart = px.bar(
     color="arv_treatment",
     barmode="stack",
     title="ARV Treatment Distribution by Sex",
-    labels={"sex": "Sex", "arv_treatment": "ARV Treatment"}
-)
+    labels={"sex": "Sex", "arv_treatment": "ARV Treatment"},
+).update_traces(textposition="outside")
 
 water_chart = px.bar(
     water_counts,
@@ -105,8 +105,10 @@ water_chart = px.bar(
     y="Washing Frequency",
     color_discrete_sequence=["#0F766E"],
     title="Water Container Washing Frequency",
-    text="Count"
-).update_yaxes(categoryorder='total ascending')
+    labels={"Count": "Number of Caregivers", "Washing Frequency": "Washing Frequency"}
+).update_yaxes(categoryorder='total ascending'
+).update_layout(template="simple_white"
+).update_traces(textposition="outside")
 
 
 # Health area distribution
@@ -119,7 +121,8 @@ health_area_chart = px.bar(
     x="Health Area",
     y="Count",
     title="Children Surveyed by Health Area",
-    text="Count"
+    color_discrete_sequence=px.colors.qualitative.Bold
+).update_traces(textposition="outside"
 )
 ```
 
