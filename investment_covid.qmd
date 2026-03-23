@@ -60,6 +60,7 @@ fig_bar = px.bar(
     x="Investment_Option",
     y="Average_Rank",
     text="Average_Rank",
+    color_discrete_sequence=['#0077b6'],
     title="Top 5 Preferred Investment Options"
 ).update_traces(texttemplate="%{text:.2f}", textposition="outside"
 ).update_layout(yaxis_title="Average Rank (Lower = Better)", xaxis_title=""
@@ -77,6 +78,7 @@ fig_pie = px.pie(
     names="gender",
     values="Count",
     title="Gender Distribution of Investors",
+    color_discrete_sequence=px.colors.qualitative.Bold,
     hole=0.4
 )
 
@@ -89,7 +91,8 @@ fig_stacked = px.bar(
     y="Count",
     color="Objective",
     title="Investment Objective by Gender",
-    barmode="stack"
+    barmode="stack",
+    color_discrete_sequence=px.colors.qualitative.Bold
 )
 
 # CHART 4: Preferred investment duration by age group
@@ -119,6 +122,7 @@ fig_donut = px.pie(
     expect_data,
     names="Expect",
     values="Count",
+    color_discrete_sequence=px.colors.qualitative.Bold,
     title="Expected Return Range",
 )
 ```
@@ -128,7 +132,7 @@ This dashboard explores the investment habits of individuals during the COVID-19
 
 ## Row {height="20%"}
 
-::: {.valuebox icon="people-fill" color="#780000" title="Total Respondents"}
+::: {.valuebox icon="people-fill" color="#8ecae6" title="Total Respondents"}
 `{python} f"{total_respondents}"`
 :::
 
@@ -136,7 +140,7 @@ This dashboard explores the investment habits of individuals during the COVID-19
 `{python} f"{investors_pct:.1f}%"`
 :::
 
-::: {.valuebox icon="graph-up-arrow" color="#515B8A" title="% in Stock Market (Equity)"}
+::: {.valuebox icon="graph-up-arrow" color="#778da9" title="% in Stock Market (Equity)"}
 `{python} f"{stock_market_pct:.1f}%"`
 :::
 
@@ -144,7 +148,7 @@ This dashboard explores the investment habits of individuals during the COVID-19
 `{python} top_avenue`
 :::
 
-::: {.valuebox icon="bullseye" color="#003049" title="Top Investment Objective"}
+::: {.valuebox icon="bullseye" color="#dda15e" title="Top Investment Objective"}
 `{python} top_objective`
 :::
 
