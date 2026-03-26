@@ -1,0 +1,235 @@
+
+```{python}
+# 3. DROP EXTRA COLUMN
+# ---------------------------------
+if "." in df.columns:
+    df = df.drop(columns=["."])
+```
+
+```{python}
+# 4. CLEAN DATA
+df["Account_No"] = df["Account_No"].astype(str).str.replace("'", "", regex=False).str.strip()
+
+df["TRANSACTION_DETAILS"] = (
+    df["TRANSACTION_DETAILS"]
+    .astype(str)
+    .str.replace("\xa0", " ", regex=False)
+    .str.strip()
+)
+
+df["DATE"] = pd.to_datetime(df["DATE"], errors="coerce")
+df["VALUE_DATE"] = pd.to_datetime(df["VALUE_DATE"], errors="coerce")
+
+for col in ["WITHDRAWAL_AMT", "DEPOSIT_AMT", "BALANCE_AMT"]:
+    df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+
+df = df.dropna(subset=["DATE"]).copy()
+df
+```
+
+```{python}
+# 5. FEATURE ENGINEERING
+df["Net_Transaction"] = df["DEPOSIT_AMT"] - df["WITHDRAWAL_AMT"]
+df["Transaction_Amount"] = df[["DEPOSIT_AMT", "WITHDRAWAL_AMT"]].max(axis=1)
+df["Large_Transaction_Flag"] = np.where(df["Transaction_Amount"] > 500000, "Yes", "No")
+df["Negative_Balance_Flag"] = np.where(df["BALANCE_AMT"] < 0, "Yes", "No")
+df["Month"] = df["DATE"].dt.to_period("M").astype(str)
+
+df = df.sort_values(["Account_No", "DATE"]).reset_index(drop=True)
+df["Cumulative_Balance"] = df.groupby("Account_No")["Net_Transaction"].cumsum()
+```
+
+```{python}
+# 6. KPI VALUES
+total_deposits = df["DEPOSIT_AMT"].sum()
+total_withdrawals = df["WITHDRAWAL_AMT"].sum()
+average_balance = df["BALANCE_AMT"].mean()
+high_value_tx = (df["Large_Transaction_Flag"] == "Yes").sum()
+negative_accounts = df.loc[df["BALANCE_AMT"] < 0, "Account_No"].nunique()
+
+print("Total Deposits:", round(total_deposits, 2))
+print("Total Withdrawals:", round(total_withdrawals, 2))
+print("Average Balance:", round(average_balance, 2))
+print("High Value Transactions:", high_value_tx)
+print("Accounts with Negative Balances:", negative_accounts)
+```
+```{python}
+# 7. ACCOUNT SUMMARY
+# ---------------------------------
+account_summary = df.groupby("Account_No", as_index=False).agg({
+    "DEPOSIT_AMT": "sum",
+    "WITHDRAWAL_AMT": "sum",
+    "Transaction_Amount": "mean",
+    "BALANCE_AMT": "mean",
+    "Large_Transaction_Flag": lambda x: (x == "Yes").sum()
+})
+
+account_summary.columns = [
+    "Account_No",
+    "Total_Deposits",
+    "Total_Withdrawals",
+    "Avg_Transaction_Amount",
+    "Avg_Balance",
+    "High_Value_Transactions"
+]
+
+account_summary["Risk_Score"] = (
+    (account_summary["Total_Withdrawals"] > account_summary["Total_Deposits"]).astype(int)
+    + (account_summary["High_Value_Transactions"] > 0).astype(int)
+    + (account_summary["Avg_Balance"] < 0).astype(int)
+)
+
+account_summary["Risk_Level"] = np.select(
+    [
+        account_summary["Risk_Score"] >= 3,
+        account_summary["Risk_Score"] == 2
+    ],
+    [
+        "High Risk",
+        "Medium Risk"
+    ],
+    default="Low Risk"
+)
+```
+
+```{python}
+# 8. MONTHLY FLOW
+# ---------------------------------
+monthly_flow = df.groupby("Month", as_index=False).agg({
+    "DEPOSIT_AMT": "sum",
+    "WITHDRAWAL_AMT": "sum"
+})
+
+monthly_melted = monthly_flow.melt(
+    id_vars="Month",
+    value_vars=["DEPOSIT_AMT", "WITHDRAWAL_AMT"],
+    var_name="Flow_Type",
+    value_name="Amount"
+)
+```
+
+```{python}
+# 9. TOP 10 TRANSACTIONS
+# ---------------------------------
+top_10 = df.sort_values("Transaction_Amount", ascending=False).head(10).copy()
+top_10["Label"] = top_10["Account_No"] + " | " + top_10["DATE"].dt.strftime("%Y-%m-%d")
+top_10
+```
+
+
+```{python}
+# 10. VISUALS
+# Top 5 risky accounts
+top_accounts = account_summary.sort_values("Risk_Score", ascending=False)["Account_No"].head(5)
+
+filtered_df = df[df["Account_No"].isin(top_accounts)]
+
+fig = px.line(
+    filtered_df,
+    x="DATE",
+    y="BALANCE_AMT",
+    color="Account_No",
+    title="Balance Trend (Top Risk Accounts)",
+    markers=True,
+    color_discrete_sequence=px.colors.qualitative.Bold
+)
+
+fig.update_layout(template="plotly_white", title_x=0.5)
+fig.show()
+```
+
+```{python}
+fig = px.line(
+    df[df["Account_No"].isin(top_accounts)],
+    x="DATE",
+    y="BALANCE_AMT",
+    facet_col="Account_No",
+    facet_col_wrap=2,
+    title="Balance Trends by Account"
+)
+
+fig.update_layout(template="plotly_white", title_x=0.5)
+fig.show()
+```
+```{python}
+account_melted = account_summary.melt(
+    id_vars="Account_No",
+    value_vars=["Total_Deposits", "Total_Withdrawals"],
+    var_name="Transaction_Type",
+    value_name="Amount"
+)
+
+fig_bar = px.bar(
+    account_melted,
+    x="Account_No",
+    y="Amount",
+    color="Transaction_Type",
+    title="Deposits vs Withdrawals per Account",
+    barmode="group",
+    color_discrete_sequence=px.colors.qualitative.Set2
+)
+fig_bar.update_layout(template="plotly_white", title_x=0.5)
+fig_bar.show()
+```
+
+
+```{python}
+fig_stacked = px.bar(
+    monthly_melted,
+    x="Month",
+    y="Amount",
+    color="Flow_Type",
+    title="Monthly Inflow vs Outflow",
+    barmode="stack",
+    color_discrete_sequence=px.colors.qualitative.Pastel
+)
+fig_stacked.update_layout(template="plotly_white", title_x=0.5)
+fig_stacked.show()
+
+```
+
+
+```{python}
+fig_scatter = px.scatter(
+    df,
+    x="DEPOSIT_AMT",
+    y="WITHDRAWAL_AMT",
+    color="Large_Transaction_Flag",
+    size="Transaction_Amount",
+    hover_data=["Account_No", "DATE", "TRANSACTION_DETAILS", "BALANCE_AMT"],
+    title="Deposit vs Withdrawal (Outlier Detection)",
+    color_discrete_sequence=px.colors.qualitative.Safe
+)
+fig_scatter.update_layout(template="plotly_white", title_x=0.5)
+fig_scatter.show()
+
+```
+
+
+```{python}
+fig_top10 = px.bar(
+    top_10.sort_values("Transaction_Amount"),
+    x="Transaction_Amount",
+    y="Label",
+    orientation="h",
+    color="Transaction_Amount",
+    title="Top 10 Largest Transactions",
+    color_continuous_scale=px.colors.sequential.Viridis
+)
+fig_top10.update_layout(template="plotly_white", title_x=0.5)
+fig_top10.show()
+
+```
+
+```{python}
+fig_risk = px.bar(
+    account_summary.sort_values("Risk_Score", ascending=False),
+    x="Account_No",
+    y="Risk_Score",
+    color="Risk_Level",
+    title="Risk Score by Account",
+    color_discrete_sequence=px.colors.qualitative.Set1
+)
+fig_risk.update_layout(template="plotly_white", title_x=0.5)
+fig_risk.show()
+```

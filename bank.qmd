@@ -1,0 +1,355 @@
+---
+title: "Fraud Detection & Account Flow Dashboard"
+author: "FAYOMI ABIGAIL OLUDAYO"
+format: 
+  dashboard:
+    orientation: rows
+    theme: cosmo
+execute:
+  echo: false
+warning: false
+---
+
+```{python}
+import pandas as pd
+import numpy as np
+import plotly.express as px
+import itables
+
+# Load data
+df = pd.read_excel("data/bank.xlsx")
+
+df.columns = (
+    df.columns.astype(str)
+    .str.strip()
+    .str.replace(" ", "_", regex=False)
+)
+
+# 3. DROP EXTRA COLUMN
+if "." in df.columns:
+    df = df.drop(columns=["."])
+
+# 4. CLEAN DATA
+df["Account_No"] = df["Account_No"].astype(str).str.replace("'", "", regex=False).str.strip()
+
+df["TRANSACTION_DETAILS"] = (
+    df["TRANSACTION_DETAILS"]
+    .astype(str)
+    .str.replace("\xa0", " ", regex=False)
+    .str.strip()
+)
+
+df["DATE"] = pd.to_datetime(df["DATE"], errors="coerce")
+df["VALUE_DATE"] = pd.to_datetime(df["VALUE_DATE"], errors="coerce")
+
+for col in ["WITHDRAWAL_AMT", "DEPOSIT_AMT", "BALANCE_AMT"]:
+    df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+
+df = df.dropna(subset=["DATE"]).copy()
+
+# 5. FEATURE ENGINEERING
+df["Net_Transaction"] = df["DEPOSIT_AMT"] - df["WITHDRAWAL_AMT"]
+df["Transaction_Amount"] = df[["DEPOSIT_AMT", "WITHDRAWAL_AMT"]].max(axis=1)
+df["Large_Transaction_Flag"] = np.where(df["Transaction_Amount"] > 500000, "Yes", "No")
+df["Negative_Balance_Flag"] = np.where(df["BALANCE_AMT"] < 0, "Yes", "No")
+df["Month"] = df["DATE"].dt.to_period("M").astype(str)
+
+df = df.sort_values(["Account_No", "DATE"]).reset_index(drop=True)
+df["Cumulative_Balance"] = df.groupby("Account_No")["Net_Transaction"].cumsum()
+
+# 6. KPI VALUES
+total_deposits = df["DEPOSIT_AMT"].sum()
+total_withdrawals = df["WITHDRAWAL_AMT"].sum()
+average_balance = df["BALANCE_AMT"].mean()
+high_value_tx = (df["Large_Transaction_Flag"] == "Yes").sum()
+negative_accounts = df.loc[df["BALANCE_AMT"] < 0, "Account_No"].nunique()
+
+# 7. ACCOUNT SUMMARY
+account_summary = df.groupby("Account_No", as_index=False).agg({
+    "DEPOSIT_AMT": "sum",
+    "WITHDRAWAL_AMT": "sum",
+    "Transaction_Amount": "mean",
+    "BALANCE_AMT": "mean",
+    "Large_Transaction_Flag": lambda x: (x == "Yes").sum()
+})
+
+account_summary.columns = [
+    "Account_No",
+    "Total_Deposits",
+    "Total_Withdrawals",
+    "Avg_Transaction_Amount",
+    "Avg_Balance",
+    "High_Value_Transactions"
+]
+
+account_summary["Risk_Score"] = (
+    (account_summary["Total_Withdrawals"] > account_summary["Total_Deposits"]).astype(int)
+    + (account_summary["High_Value_Transactions"] > 0).astype(int)
+    + (account_summary["Avg_Balance"] < 0).astype(int)
+)
+
+account_summary["Risk_Level"] = np.select(
+    [
+        account_summary["Risk_Score"] >= 3,
+        account_summary["Risk_Score"] == 2
+    ],
+    [
+        "High Risk",
+        "Medium Risk"
+    ],
+    default="Low Risk"
+)
+
+# 8. MONTHLY FLOW
+monthly_flow = df.groupby("Month", as_index=False).agg({
+    "DEPOSIT_AMT": "sum",
+    "WITHDRAWAL_AMT": "sum"
+})
+
+monthly_melted = monthly_flow.melt(
+    id_vars="Month",
+    value_vars=["DEPOSIT_AMT", "WITHDRAWAL_AMT"],
+    var_name="Flow_Type",
+    value_name="Amount"
+)
+
+# 9. TOP 10 TRANSACTIONS
+top_10 = df.sort_values("Transaction_Amount", ascending=False).head(10).copy()
+top_10["Label"] = top_10["Account_No"] + " | " + top_10["DATE"].dt.strftime("%Y-%m-%d")
+
+# 10. VISUALS
+# Top 5 risky accounts
+top_accounts = account_summary.sort_values("Risk_Score", ascending=False)["Account_No"].head(5)
+
+filtered_df = df[df["Account_No"].isin(top_accounts)]
+
+fig = px.line(
+    filtered_df,
+    x="DATE",
+    y="BALANCE_AMT",
+    color="Account_No",
+    title="Balance Trend (Top Risk Accounts)",
+    markers=True,
+    color_discrete_sequence=px.colors.qualitative.Bold
+)
+
+# Balance Trends by Account
+account_melted = account_summary.melt(
+    id_vars="Account_No",
+    value_vars=["Total_Deposits", "Total_Withdrawals"],
+    var_name="Transaction_Type",
+    value_name="Amount"
+)
+
+fig_bar = px.bar(
+    account_melted,
+    x="Account_No",
+    y="Amount",
+    color="Transaction_Type",
+    title="Deposits vs Withdrawals per Account",
+    barmode="group",
+    color_discrete_sequence=px.colors.qualitative.Set2
+).update_layout(
+    template="plotly_white",
+    title_x=0.5,
+    xaxis_title="Account Number",
+    yaxis_title="Amount"
+)
+
+# Monthly Inflow vs Outflow
+fig_stacked = px.bar(
+    monthly_melted,
+    x="Month",
+    y="Amount",
+    color="Flow_Type",
+    title="Monthly Inflow vs Outflow",
+    barmode="stack",
+    color_discrete_sequence=px.colors.qualitative.Pastel
+)
+
+# Deposit vs Withdrawal (Outlier Detection)
+threshold_99 = df["Transaction_Amount"].quantile(0.99)
+
+df["Top_1pct_Anomaly"] = np.where(
+    df["Transaction_Amount"] >= threshold_99,
+    "Top 1% Anomaly",
+    "Normal"
+)
+
+deposit_threshold = df["DEPOSIT_AMT"].quantile(0.95)
+withdrawal_threshold = df["WITHDRAWAL_AMT"].quantile(0.95)
+
+fig_scatter = px.scatter(
+    df,
+    x="DEPOSIT_AMT",
+    y="WITHDRAWAL_AMT",
+    color="Top_1pct_Anomaly",
+    size="Transaction_Amount",
+    hover_data=["Account_No", "DATE", "TRANSACTION_DETAILS", "BALANCE_AMT"],
+    title="Deposit vs Withdrawal (Top 1% Anomalies)",
+    color_discrete_map={
+        "Normal": "#4C78A8",
+        "Top 1% Anomaly": "#E63946"
+    }
+).update_layout(
+    template="plotly_white",
+    title_x=0.5,
+    xaxis_title="Deposit Amount ($)",
+    yaxis_title="Withdrawal Amount ($)"
+)
+
+# Show all figures
+fig_top10 = px.bar(
+    top_10.sort_values("Transaction_Amount"),
+    x="Transaction_Amount",
+    y="Label",
+    orientation="h",
+    color="Transaction_Amount",
+    title="Top 10 Largest Transactions",
+    color_continuous_scale=px.colors.sequential.Viridis
+)
+
+fig_risk = px.bar(
+    account_summary.sort_values("Risk_Score", ascending=False),
+    x="Account_No",
+    y="Risk_Score",
+    color="Risk_Level",
+    title="Risk Score by Account",
+    color_discrete_sequence=px.colors.qualitative.Set1
+)
+def format_currency(value):
+    if value >= 1_000_000_000:
+        return f"${value/1_000_000_000:.1f}B"
+    elif value >= 1_000_000:
+        return f"${value/1_000_000:.1f}M"
+    else:
+        return f"${value:,.0f}"
+```
+
+
+# OVERVIEW
+This dashboard analyzes bank transaction activity to uncover unusual account behavior, identify high-value transactions, and monitor the flow of deposits and withdrawals over time. 
+
+It highlights potential fraud signals by combining transaction trends, account-level summaries, and rule-based risk scoring.
+
+## Row {height="20%"}
+
+::: {.valuebox icon="cash-stack" color="#2a9d8f" title="Total Deposits"}
+`{python} format_currency(total_deposits)`
+:::
+
+::: {.valuebox icon="cash-coin" color="#e76f51" title="Total Withdrawals"}
+`{python} format_currency(total_withdrawals)`
+:::
+
+::: {.valuebox icon="bank" color="#457b9d" title="Average Balance"}
+`{python} format_currency(average_balance)`
+:::
+
+::: {.valuebox icon="exclamation-triangle-fill" color="#dda15e" title="High Value Transactions"}
+`{python} f"{high_value_tx}"`
+:::
+
+::: {.valuebox icon="dash-circle-fill" color="#885A89" title="Negative Balance Accounts"}
+`{python} f"{negative_accounts}"`
+:::
+
+
+## Row {height="80%"}
+
+### Column {width="50%"}
+
+```{python}
+fig.show()
+```
+
+This chart focuses on the top risk accounts and tracks how their balances change over time.
+Some accounts show sharp drops and unstable balance movement, which may indicate unusually large withdrawals or rapid movement of funds.
+
+By filtering to only the riskiest accounts, the chart becomes more useful for investigation and helps surface accounts that deserve closer attention.
+
+### Column {width="50%"}
+
+```{python}
+fig_risk.show()
+```
+
+This chart ranks accounts based on a simple rule-based risk score.
+Accounts are scored higher when they show warning signs such as:
+
+withdrawals greater than deposits
+presence of high-value transactions
+weak or negative average balances
+
+It helps prioritize which accounts should be reviewed first during fraud investigation.
+
+# ACCOUNT ACTIVITY AND CASH FLOW
+
+## Row {height="50%"}
+
+### Column {width="50%"}
+
+```{python}
+fig_bar.show()
+```
+
+This comparison of total deposits and withdrawals per account shows how money moves in and out of each account.
+Accounts where withdrawals are consistently higher than deposits may indicate unusual outflow behavior, especially when combined with other fraud signals.
+
+The chart also helps distinguish between accounts that mainly accumulate funds and those that rapidly deplete them.
+
+### Column {width="50%"}
+
+```{python}
+fig_stacked.show()
+```
+
+The monthly inflow and outflow chart highlights how transaction volumes evolve over time.
+Periods with sudden spikes in deposits or withdrawals can point to abnormal activity, coordinated transfers, or unusual cash movement.
+
+This view is useful for spotting months that deserve deeper investigation.
+
+
+# TRANSACTION ANOMALIES
+
+## Row {height="50%"}
+
+### Column {width="50%"}
+
+```{python}
+fig_scatter.show()
+```
+
+By isolating the top 1% of transactions, the chart clearly highlights high-value anomalies that were previously hidden. 
+
+These anomalies are concentrated in accounts showing either large withdrawals without deposits or large deposits without corresponding outflows, indicating potentially suspicious or non-standard financial behavior.
+
+
+### Column {width="50%"}
+
+```{python}
+fig_top10.show()
+```
+
+This chart isolates the 10 largest transactions in the dataset.
+A concentration of very large transactions within specific accounts may suggest structured movement of funds or unusually active accounts.
+
+It provides a quick way to identify the transactions that deserve immediate review.
+
+# SUMMARY
+
+This dashboard transforms raw transaction records into a fraud-focused monitoring view. It combines account balance behavior, transaction flow, anomaly detection, and risk scoring to highlight where investigators should focus first.
+
+The analysis shows that not all accounts behave the same way. Some accounts demonstrate unstable balance trends, some withdraw more than they deposit, and others are associated with repeated large-value transactions. These patterns do not prove fraud on their own, but they do provide strong indicators of elevated financial risk.
+
+Overall, the dashboard improves visibility into account activity and helps surface the patterns that matter most for fraud detection and account monitoring.
+
+## DATA DOWNLOAD
+
+```{python}
+itables.show(
+    df,
+    caption="Bank Transactions Dataset",
+    buttons=["csvHtml5"]
+)
+```
