@@ -1,0 +1,484 @@
+---
+title: "GLOBAL HIV EPIDEMIC ANALYSIS: Trends in New Infections and People Living with HIV"
+author: "FAYOMI ABIGAIL OLUDAYO"
+format:
+  dashboard:
+    theme: cosmo
+execute:
+  echo: false
+  warning: false
+---
+
+```{python}
+# IMPORT LIBRARIES
+import pandas as pd
+import numpy as np
+import plotly.express as px
+import plotly.graph_objects as go
+import itables
+import country_converter as coco
+import pycountry 
+
+# 1. LOAD DATA
+
+df_new = pd.read_csv("data/newly_hiv_infected_number_all_ages.csv")
+df_plhiv = pd.read_csv("data/people_living_with_hiv_number_all_ages.csv")
+
+
+# 2. CLEAN COLUMN NAMES
+
+df_new.columns = df_new.columns.str.strip().str.lower()
+df_plhiv.columns = df_plhiv.columns.str.strip().str.lower()
+
+
+# 3. HELPER FUNCTION TO CONVERT VALUES LIKE 11k, 1.5k, etc.
+
+def convert_k(x):
+    if pd.isna(x):
+        return np.nan
+    x = str(x).strip().lower().replace(",", "")
+    if x in ["", "nan", "na", ".."]:
+        return np.nan
+    if x.endswith("k"):
+        return float(x[:-1]) * 1000
+    return pd.to_numeric(x, errors="coerce")
+
+
+# 4. MELT DATASETS FROM WIDE TO LONG
+
+df_new = df_new.rename(columns={df_new.columns[0]: "country"})
+df_plhiv = df_plhiv.rename(columns={df_plhiv.columns[0]: "country"})
+
+df_new = df_new.melt(
+    id_vars=["country"],
+    var_name="year",
+    value_name="new_infections"
+)
+
+df_plhiv = df_plhiv.melt(
+    id_vars=["country"],
+    var_name="year",
+    value_name="plhiv"
+)
+
+
+# 5. CLEAN DATA TYPES
+
+df_new["country"] = df_new["country"].astype(str).str.strip()
+df_plhiv["country"] = df_plhiv["country"].astype(str).str.strip()
+
+df_new["year"] = pd.to_numeric(df_new["year"], errors="coerce")
+df_plhiv["year"] = pd.to_numeric(df_plhiv["year"], errors="coerce")
+
+df_new["new_infections"] = df_new["new_infections"].apply(convert_k)
+df_plhiv["plhiv"] = df_plhiv["plhiv"].apply(convert_k)
+
+# Drop rows where year is missing
+df_new = df_new.dropna(subset=["year"])
+df_plhiv = df_plhiv.dropna(subset=["year"])
+
+# Make year integer
+df_new["year"] = df_new["year"].astype(int)
+df_plhiv["year"] = df_plhiv["year"].astype(int)
+
+
+# 6. MERGE THE TWO DATASETS
+
+df = pd.merge(df_new, df_plhiv, on=["country", "year"], how="inner")
+
+
+# 7. DERIVED METRICS
+
+df = df.sort_values(["country", "year"]).reset_index(drop=True)
+
+df["infection_ratio"] = df["new_infections"] / df["plhiv"]
+
+df["new_inf_pct_change"] = (
+    df.groupby("country")["new_infections"].pct_change(fill_method=None) * 100
+)
+
+df["plhiv_pct_change"] = (
+    df.groupby("country")["plhiv"].pct_change(fill_method=None) * 100
+)
+
+
+# 8. MAP COUNTRIES TO REGIONS AUTOMATICALLY
+
+cc = coco.CountryConverter()
+
+df["region"] = cc.convert(names=df["country"], to="continent")
+df["region"] = df["region"].replace("not found", "Other")
+
+# optional: clean up continent labels if needed
+df["region"] = df["region"].replace({
+    "America": "Americas"
+})
+
+# 9. OPTIONAL: CREATE ISO3 CODES FOR BETTER MAP MATCHING
+
+def get_iso3(country_name):
+    try:
+        return pycountry.countries.lookup(country_name).alpha_3
+    except:
+        return None
+
+df["iso3"] = df["country"].apply(get_iso3)
+
+
+# 10. REGIONAL AGGREGATES
+
+regional_df = (
+    df.groupby(["region", "year"], as_index=False)
+    .agg({
+        "new_infections": "sum",
+        "plhiv": "sum"
+    })
+)
+
+regional_df["infection_ratio"] = regional_df["new_infections"] / regional_df["plhiv"]
+
+
+# 11. LATEST YEAR SNAPSHOT
+
+latest_year = df["year"].max()
+
+df_latest = df[df["year"] == latest_year].copy()
+regional_latest = regional_df[regional_df["year"] == latest_year].copy()
+
+
+# 11. KPI CALCULATIONS
+
+global_plhiv_latest = df_latest["plhiv"].sum()
+global_new_latest = df_latest["new_infections"].sum()
+global_infection_ratio = global_new_latest / global_plhiv_latest
+
+global_new_2010 = df[df["year"] == 2010]["new_infections"].sum()
+pct_change_since_2010 = (
+    ((global_new_latest - global_new_2010) / global_new_2010) * 100
+    if global_new_2010 != 0 else np.nan
+)
+
+regional_2010 = regional_df[regional_df["year"] == 2010][["region", "new_infections"]].rename(
+    columns={"new_infections": "new_2010"}
+)
+regional_latest_compare = regional_df[regional_df["year"] == latest_year][["region", "new_infections"]].rename(
+    columns={"new_infections": "new_latest"}
+)
+
+regional_change = pd.merge(regional_2010, regional_latest_compare, on="region", how="inner")
+regional_change["pct_change"] = (
+    (regional_change["new_latest"] - regional_change["new_2010"]) / regional_change["new_2010"]
+) * 100
+largest_decrease_region = regional_change.sort_values("pct_change").iloc[0]["region"]
+
+# KPI display names for dashboard
+total_plhiv = global_plhiv_latest
+total_new = global_new_latest
+global_ratio = global_infection_ratio
+pct_change_2010 = pct_change_since_2010
+
+
+# 12. COUNTRY PROGRESS VS RISING CASES
+
+country_2010 = df[df["year"] == 2010][["country", "new_infections"]].rename(
+    columns={"new_infections": "new_2010"}
+    )
+country_latest = df[df["year"] == latest_year][["country", "new_infections"]].rename(columns={"new_infections": "new_latest"})
+
+country_progress = pd.merge(country_2010, country_latest, on="country", how="inner")
+country_progress["pct_change"] = ((country_progress["new_latest"] - country_progress["new_2010"]) / country_progress["new_2010"]) * 100
+
+top_progress = country_progress.sort_values("pct_change").head(10)
+top_rising = country_progress.sort_values("pct_change", ascending=False).head(10)
+
+
+# 13. SAVE CLEANED DATA
+# ----------------------------------------------------------
+df.to_csv("hiv_merged_cleaned.csv", index=False)
+regional_df.to_csv("hiv_regional_aggregates.csv", index=False)
+
+# 14. CUSTOM COLORS
+region_colors = {
+    "Africa": "#E63946",
+    "Asia": "#F4A261",
+    "Europe": "#457B9D",
+    "Americas": "#2A9D8F",
+    "Oceania": "#8D5FD3",
+    "Other": "#6C757D"
+}
+# 15. CHART 1: GLOBAL HEAT MAP OF PLHIV (LATEST YEAR)
+
+fig_map = px.choropleth(
+    df_latest.dropna(subset=["plhiv"]),
+    locations="country",
+    locationmode="country names",
+    color="plhiv",
+    hover_name="country",
+    title=f"Global Heat Map of People Living with HIV (PLHIV) - {latest_year}",
+    color_continuous_scale=["#FFE5EC", "#FF4D6D", "#C9184A"]
+).update_layout(
+    geo=dict(showframe=False, showcoastlines=False),
+    coloraxis_colorbar=dict(title="PLHIV")
+)
+
+# 16. CHART 2: LINE CHART - GLOBAL NEW INFECTIONS VS PLHIV
+
+global_trend = (
+    df.groupby("year", as_index=False)
+    .agg({
+        "new_infections": "sum",
+        "plhiv": "sum"
+    })
+)
+
+fig_line = px.line(
+    global_trend,
+    x="year",
+    y=["new_infections", "plhiv"],
+    title="Global Trend: New HIV Infections vs People Living with HIV",
+    template="plotly_white",
+    color_discrete_map={
+        "new_infections": "#E63946",
+        "plhiv": "#9D4EDD"
+    }
+)
+
+
+# 17. CHART 3: REGIONAL TREND OF NEW INFECTIONS
+
+fig_region_trend = px.line(
+    regional_df,
+    x="year",
+    y="new_infections",
+    color="region",
+    title="New HIV Infections Over Time by Region",
+    template="plotly_white"
+).update_traces(line=dict(width=3)
+).update_layout(
+    legend_title_text="Region",
+    xaxis_title="Year",
+    yaxis_title="New Infections"
+)
+
+
+# 18. CHART 4: SCATTER PLOT - NEW INFECTIONS VS PLHIV
+
+fig_scatter = px.scatter(
+    df_latest.dropna(subset=["new_infections", "plhiv"]),
+    x="plhiv",
+    y="new_infections",
+    color="region",
+    color_discrete_map=region_colors,
+    hover_name="country",
+    size="plhiv",
+    title=f"New HIV Infections vs PLHIV by Country ({latest_year})",
+    template="plotly_white"
+)
+
+
+# 19. CHART 5: TOP 10 COUNTRIES WITH HIGHEST INFECTION RATIO
+
+top10_ratio = (
+    df_latest.dropna(subset=["infection_ratio"])
+    .sort_values("infection_ratio", ascending=False)
+    .head(10)
+)
+
+fig_ratio = px.bar(
+    top10_ratio,
+    x="infection_ratio",
+    y="country",
+    orientation="h",
+    color="infection_ratio",
+    color_continuous_scale=["#FFD6E0", "#FF5D8F", "#A4133C"],
+    title=f"Top 10 Countries with Highest Infection Ratio ({latest_year})",
+    template="plotly_white"
+).update_layout(yaxis={"categoryorder": "total ascending"})
+
+
+# 20. CHART 6: COUNTRIES SHOWING PROGRESS
+
+fig_progress = px.bar(
+    top_progress,
+    x="pct_change",
+    y="country",
+    color="pct_change",
+    color_continuous_scale=["#2EC4B6", "#CBF3F0", "#E9F5DB"],
+    title=f"Top 10 Countries with Steepest Decline in New Infections (2010-{latest_year})",
+    template="plotly_white"
+).update_layout(yaxis={"categoryorder": "total ascending"})
+
+
+# 21. CHART 7: COUNTRIES WITH RISING NEW INFECTIONS
+
+fig_rising = px.bar(
+    top_rising,
+    x="pct_change",
+    y="country",
+    color="pct_change",
+    color_continuous_scale=["#FFE066", "#FF922B", "#D00000"],
+    title=f"Top 10 Countries with Rising New Infections (2010-{latest_year})",
+    template="plotly_white"
+).update_layout(yaxis={"categoryorder": "total descending"})
+
+
+# 22. REGIONAL FOCUS: AFRICA TREND
+
+africa_df = regional_df[regional_df["region"] == "Africa"]
+
+fig_africa = px.line(
+    africa_df,
+    x="year",
+    y=["new_infections", "plhiv"],
+    title="Africa Trend: New Infections and PLHIV",
+    template="plotly_white"
+)
+```
+
+# OVERVIEW
+
+This dashboard explores the global HIV epidemic using UNAIDS estimates. It highlights trends in new HIV infections and people living with HIV (PLHIV), compares epidemic burden across countries and regions, and identifies where progress has been strongest or where challenges remain.
+
+## Row {height="20%"}
+
+::: {.valuebox icon="people-fill" color="#ec656e" title="Total PLHIV"}
+`{python} f"{total_plhiv:,.0f}"`
+:::
+
+::: {.valuebox icon="activity" color="#f77f00" title="New Infections"}
+`{python} f"{total_new:,.0f}"`
+:::
+
+::: {.valuebox icon="globe" color="#669bbc" title="Global Infection Ratio"}
+`{python} f"{global_ratio:.4f}"`
+:::
+
+::: {.valuebox icon="arrow-down-circle" color="#2a9d8f" title="Region with Largest Decrease"}
+`{python} largest_decrease_region`
+:::
+
+::: {.valuebox icon="calendar-event" color="#d0a3f5" title="% Change Since 2010"}
+`{python} f"{pct_change_2010:.2f}%"`
+:::
+
+## Row {height="80%"}
+
+### Column {width="50%"}
+
+```{python}
+fig_map
+```
+
+The global map shows that the HIV burden remains highly uneven across countries. A small number of countries account for a very large share of people living with HIV, with the highest concentrations visible in parts of sub-Saharan Africa. 
+
+This highlights where long-term treatment demand remains greatest and where health systems continue to face the strongest pressure.
+
+### Column {width="50%"}
+
+```{python}
+fig_line
+```
+
+The global trend shows two important patterns at the same time: 
+
+New HIV infections have generally declined,
+
+The number of people living with HIV remains high or continues to rise. 
+
+This suggests progress in prevention, but also reflects improved survival as more people access treatment and live longer with HIV.
+
+# CHARTS AND ANALYSIS
+
+## Row {height="100%"}
+
+### Column {width="50%"}
+
+
+```{python}
+fig_region_trend
+```
+
+Regional trends reveal that progress has not been equal across the world. 
+
+Some regions show clear and sustained declines in new infections, while others have seen slower improvement or more recent increases. 
+
+This points to major differences in prevention success, treatment access, and the strength of national HIV responses.
+
+
+### Column {width="50%"}
+
+```{python}
+fig_scatter
+```
+
+The scatter plot compares epidemic burden and ongoing transmission across countries. Countries with both high PLHIV and high new infections remain under the greatest strain, while countries with high PLHIV but lower new infections may be showing stronger epidemic control. 
+
+The chart helps separate countries with large treatment burdens from those still facing intense transmission.
+
+# ADDITIONAL CHARTS AND ANALYSIS
+
+## Row {height="100%"}
+
+### Column {width="50%"}
+
+```{python}
+fig_ratio
+```
+
+The infection ratio highlights countries where new infections are still high relative to the number of people already living with HIV. 
+
+A high ratio suggests weaker epidemic control, because new cases are being added faster relative to the existing burden. These countries may need stronger prevention, earlier diagnosis, and more targeted interventions.
+
+### Column {width="50%"}
+
+```{python}
+fig_progress
+```
+
+This chart highlights the countries that have made the strongest progress since 2010 in reducing new HIV infections. Steep declines suggest effective prevention strategies, wider awareness, improved testing, and stronger access to treatment. 
+
+These countries can serve as examples of where sustained HIV response efforts are translating into measurable gains.
+
+
+# ADDITIONAL INSIGHTS
+
+## Row {height="100%"}
+
+### Column {width="50%"}
+
+```{python}
+fig_rising
+```
+
+This chart identifies countries where new HIV infections have risen since 2010, signaling emerging challenges or gaps in the HIV response. 
+
+Rising trends may reflect factors such as prevention fatigue, funding shortfalls, policy changes, or shifts in transmission dynamics. These countries should be seen as priority areas for renewed public health attention and resources.
+
+
+### Column {width="50%"}
+
+```{python}
+fig_africa
+```
+
+The Africa-focused chart shows that while new infections have generally declined, the number of people living with HIV continues to rise. This reflects both ongoing transmission and improved survival due to treatment access. 
+
+The region remains the epicenter of the global epidemic, underscoring the need for sustained investment in prevention, testing, and treatment services.
+
+# CONCLUSION
+
+This dashboard provides a comprehensive overview of the global HIV epidemic, highlighting where progress has been made and where challenges remain. 
+
+The analysis underscores the importance of continued efforts to reduce new infections while supporting the millions of people living with HIV worldwide. 
+
+By understanding these trends, policymakers, health professionals, and advocates can better target resources and interventions to achieve greater impact in the fight against HIV/AIDS.
+
+## ABOUT
+
+```{python}
+itables.show(
+    df,
+    caption="Merged Dataset of New HIV Infections and People Living with HIV",
+    buttons=["csvHtml5"]
+)
+```
